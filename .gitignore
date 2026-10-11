@@ -55,3 +55,18 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Bot local data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# SSH keys - never commit
+*.key
+*.key.pub
+*.pem
+id_*
+
+# Visual Studio
+.vs/
