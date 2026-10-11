@@ -8,7 +8,7 @@ public sealed class BotOptions
     public string Token { get; set; } = "";
 
     /// <summary>Path to the SQLite file that stores subscribers.</summary>
-    public string DatabasePath { get; set; } = "data/bot.db";
+    public string DatabasePath { get; set; } = "db/bot.db";
 
     /// <summary>When true, the bot sends <see cref="StartupMessage"/> to every subscriber after each start/deploy.</summary>
     public bool AnnounceOnStartup { get; set; } = true;

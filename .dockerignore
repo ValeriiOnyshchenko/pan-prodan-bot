@@ -1,6 +1,6 @@
 **/bin/
 **/obj/
-**/data/
+**/db/
 .git/
 .github/
 .vs/

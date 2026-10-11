@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
 using PanProdanBot;
 using PanProdanBot.Bot;
-using PanProdanBot.Data;
+using PanProdanBot.Storage;
 using Telegram.Bot;
 
 var builder = Host.CreateApplicationBuilder(args);

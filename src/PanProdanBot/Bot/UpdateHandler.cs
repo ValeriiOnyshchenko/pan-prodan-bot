@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using PanProdanBot.Data;
+using PanProdanBot.Storage;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;

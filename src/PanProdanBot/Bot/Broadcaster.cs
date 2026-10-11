@@ -1,4 +1,4 @@
-using PanProdanBot.Data;
+using PanProdanBot.Storage;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 

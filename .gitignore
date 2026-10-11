@@ -57,7 +57,7 @@ TestResult.xml
 nunit-*.xml
 
 # Bot local data
-data/
+/src/PanProdanBot/db/
 *.db
 *.db-shm
 *.db-wal
