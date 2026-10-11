@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using PanProdanBot.Auctions;
 using PanProdanBot.Storage;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -7,7 +9,12 @@ using Telegram.Bot.Types.Enums;
 namespace PanProdanBot.Bot;
 
 /// <summary>Handles incoming updates: /start subscribes, /stop or blocking the bot unsubscribes.</summary>
-public sealed class UpdateHandler(SubscriberStore store, ILogger<UpdateHandler> log) : IUpdateHandler
+public sealed class UpdateHandler(
+    SubscriberStore store,
+    Broadcaster broadcaster,
+    IOptions<MonitorOptions> monitor,
+    ILogger<UpdateHandler> log)
+    : IUpdateHandler
 {
     public async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
@@ -38,7 +45,15 @@ public sealed class UpdateHandler(SubscriberStore store, ILogger<UpdateHandler> 
             case "/start":
                 await store.AddAsync(chatId, msg.From?.Username, msg.From?.FirstName, ct);
                 log.LogInformation("Subscribed {ChatId} (@{Username})", chatId, msg.From?.Username);
-                await bot.SendMessage(chatId, BotTexts.Welcome, cancellationToken: ct);
+                await bot.SendMessage(chatId, BotTexts.Welcome(monitor.Value), cancellationToken: ct);
+                try
+                {
+                    await broadcaster.SendLatestLotsAsync(chatId, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    log.LogWarning(ex, "Could not send latest lots to {ChatId}", chatId); // welcome already delivered
+                }
                 break;
 
             case "/stop":

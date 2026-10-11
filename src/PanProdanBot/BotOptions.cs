@@ -11,5 +11,5 @@ public sealed class BotOptions
     public string DatabasePath { get; set; } = "db/bot.db";
 
     /// <summary>When true, the bot sends <see cref="BotTexts.Startup"/> to every subscriber after each start/deploy.</summary>
-    public bool AnnounceOnStartup { get; set; } = true;
+    public bool AnnounceOnStartup { get; set; } = false;
 }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PanProdanBot.Auctions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
@@ -11,6 +12,7 @@ public sealed class BotService(
     UpdateHandler handler,
     Broadcaster broadcaster,
     IOptions<BotOptions> options,
+    IOptions<MonitorOptions> monitor,
     ILogger<BotService> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -42,8 +44,9 @@ public sealed class BotService(
             if ((await bot.GetMyShortDescription(cancellationToken: ct)).ShortDescription != BotTexts.ShortDescription)
                 await bot.SetMyShortDescription(BotTexts.ShortDescription, cancellationToken: ct);
 
-            if ((await bot.GetMyDescription(cancellationToken: ct)).Description != BotTexts.Description)
-                await bot.SetMyDescription(BotTexts.Description, cancellationToken: ct);
+            var description = BotTexts.Description(monitor.Value);
+            if ((await bot.GetMyDescription(cancellationToken: ct)).Description != description)
+                await bot.SetMyDescription(description, cancellationToken: ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
