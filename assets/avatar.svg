@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0" stop-color="#3a6fc4"/>
+      <stop offset="1" stop-color="#16315f"/>
+    </radialGradient>
+    <linearGradient id="hat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d2ad"/>
+      <stop offset="1" stop-color="#e9b98d"/>
+    </linearGradient>
+    <pattern id="embroidery" width="28" height="28" patternUnits="userSpaceOnUse">
+      <rect width="28" height="28" fill="#fbf7ef"/>
+      <path d="M14 3 L25 14 L14 25 L3 14 Z" fill="#c4262e"/>
+      <path d="M14 9 L19 14 L14 19 L9 14 Z" fill="#1d1d1d"/>
+    </pattern>
+  </defs>
+
+  <!-- background -->
+  <rect width="640" height="640" fill="url(#bg)"/>
+  <circle cx="320" cy="320" r="300" fill="none" stroke="#f2c14e" stroke-width="6" opacity=".35"/>
+  <!-- sparkles -->
+  <g fill="#f2c14e" opacity=".8">
+    <path d="M110 170 l8 22 22 8 -22 8 -8 22 -8 -22 -22 -8 22 -8z"/>
+    <path d="M520 130 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6z"/>
+    <path d="M545 330 l5 13 13 5 -13 5 -5 13 -5 -13 -13 -5 13 -5z"/>
+  </g>
+
+  <!-- body: shirt + vest -->
+  <path d="M95 640 C105 545 185 500 320 500 C455 500 535 545 545 640 Z" fill="#fbf7ef"/>
+  <path d="M95 640 C105 545 175 505 250 500 L285 640 Z" fill="#8a1f24"/>
+  <path d="M545 640 C535 545 465 505 390 500 L355 640 Z" fill="#8a1f24"/>
+  <path d="M250 500 L285 640 M390 500 L355 640" stroke="#f2c14e" stroke-width="5" fill="none"/>
+  <!-- embroidered placket -->
+  <rect x="304" y="505" width="32" height="135" fill="url(#embroidery)"/>
+  <!-- neck -->
+  <path d="M275 440 L365 440 L372 505 L268 505 Z" fill="#e2ad80"/>
+  <!-- embroidered collar -->
+  <path d="M258 495 Q320 530 382 495 L390 515 Q320 555 250 515 Z" fill="url(#embroidery)" stroke="#c4262e" stroke-width="2"/>
+
+  <!-- ears -->
+  <ellipse cx="205" cy="345" rx="22" ry="32" fill="#e9b98d"/>
+  <ellipse cx="435" cy="345" rx="22" ry="32" fill="#e9b98d"/>
+  <!-- head -->
+  <ellipse cx="320" cy="340" rx="118" ry="132" fill="url(#skin)"/>
+  <!-- grey sideburns -->
+  <path d="M203 300 Q205 360 222 395 L232 330 Q226 300 230 280 Z" fill="#c9c3bb"/>
+  <path d="M437 300 Q435 360 418 395 L408 330 Q414 300 410 280 Z" fill="#c9c3bb"/>
+
+  <!-- hat -->
+  <ellipse cx="320" cy="252" rx="178" ry="34" fill="#3e2312"/>
+  <path d="M205 250 C205 165 245 120 320 120 C395 120 435 165 435 250 Z" fill="url(#hat)"/>
+  <path d="M206 222 C260 236 380 236 434 222 L435 250 C380 262 260 262 205 250 Z" fill="#c4262e"/>
+  <path d="M206 222 C260 236 380 236 434 222" stroke="#f2c14e" stroke-width="3" fill="none"/>
+  <path d="M280 135 C300 150 340 150 360 135" stroke="#3e2312" stroke-width="5" fill="none" opacity=".5"/>
+  <!-- feather -->
+  <path d="M410 228 C440 190 470 170 500 165 C480 190 455 215 418 236 Z" fill="#2f7d4f"/>
+  <path d="M415 232 C445 205 470 185 495 168" stroke="#1d5a37" stroke-width="2" fill="none"/>
+
+  <!-- eyebrows -->
+  <path d="M245 300 Q275 280 302 296" stroke="#8d8279" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <path d="M338 296 Q365 280 395 300" stroke="#8d8279" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <!-- eyes (smiling) -->
+  <ellipse cx="275" cy="328" rx="15" ry="17" fill="#2a1d14"/>
+  <ellipse cx="365" cy="328" rx="15" ry="17" fill="#2a1d14"/>
+  <circle cx="280" cy="322" r="5" fill="#fff"/>
+  <circle cx="370" cy="322" r="5" fill="#fff"/>
+  <!-- wink-ish smile lines -->
+  <path d="M250 345 Q258 352 262 350" stroke="#c98e63" stroke-width="3" fill="none"/>
+  <path d="M390 345 Q382 352 378 350" stroke="#c98e63" stroke-width="3" fill="none"/>
+  <!-- cheeks -->
+  <ellipse cx="248" cy="378" rx="22" ry="14" fill="#e88c7d" opacity=".45"/>
+  <ellipse cx="392" cy="378" rx="22" ry="14" fill="#e88c7d" opacity=".45"/>
+  <!-- nose -->
+  <ellipse cx="320" cy="372" rx="24" ry="20" fill="#e2a47a"/>
+  <ellipse cx="312" cy="365" rx="7" ry="5" fill="#f6d2ad" opacity=".8"/>
+  <!-- smile -->
+  <path d="M285 425 Q320 455 355 425 Q320 440 285 425 Z" fill="#8e3b2e"/>
+  <!-- moustache -->
+  <path d="M320 392
+           C300 385 270 390 250 405
+           C232 418 215 418 200 405
+           C205 430 235 440 262 428
+           C285 418 305 410 320 412
+           C335 410 355 418 378 428
+           C405 440 435 430 440 405
+           C425 418 408 418 390 405
+           C370 390 340 385 320 392 Z" fill="#9e968d"/>
+  <path d="M320 395 C305 392 285 395 268 405" stroke="#7a736b" stroke-width="3" fill="none"/>
+  <path d="M320 395 C335 392 355 395 372 405" stroke="#7a736b" stroke-width="3" fill="none"/>
+
+  <!-- gavel -->
+  <g transform="translate(505 470) rotate(-30)">
+    <rect x="-9" y="-10" width="18" height="150" rx="8" fill="#8b5a2b"/>
+    <rect x="-55" y="-50" width="110" height="46" rx="12" fill="#a86b33"/>
+    <rect x="-62" y="-54" width="16" height="54" rx="6" fill="#f2c14e"/>
+    <rect x="46" y="-54" width="16" height="54" rx="6" fill="#f2c14e"/>
+  </g>
+  <!-- fist holding gavel -->
+  <ellipse cx="530" cy="548" rx="34" ry="28" fill="#e9b98d"/>
+  <path d="M505 538 Q530 528 555 538" stroke="#c98e63" stroke-width="3" fill="none"/>
+  <path d="M507 553 Q530 544 553 553" stroke="#c98e63" stroke-width="3" fill="none"/>
+  <!-- sleeve -->
+  <path d="M495 640 L503 568 Q530 588 560 568 L573 640 Z" fill="#fbf7ef"/>
+  <rect x="501" y="565" width="62" height="16" fill="url(#embroidery)" transform="rotate(4 532 573)"/>
+</svg>

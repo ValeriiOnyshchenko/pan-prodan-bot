@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using PanProdanBot.Storage;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -8,11 +7,8 @@ using Telegram.Bot.Types.Enums;
 namespace PanProdanBot.Bot;
 
 /// <summary>Handles incoming updates: /start subscribes, /stop or blocking the bot unsubscribes.</summary>
-public sealed class UpdateHandler(SubscriberStore store, IOptions<BotOptions> options, ILogger<UpdateHandler> log)
-    : IUpdateHandler
+public sealed class UpdateHandler(SubscriberStore store, ILogger<UpdateHandler> log) : IUpdateHandler
 {
-    private readonly BotOptions _opt = options.Value;
-
     public async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
         switch (update)
@@ -42,13 +38,17 @@ public sealed class UpdateHandler(SubscriberStore store, IOptions<BotOptions> op
             case "/start":
                 await store.AddAsync(chatId, msg.From?.Username, msg.From?.FirstName, ct);
                 log.LogInformation("Subscribed {ChatId} (@{Username})", chatId, msg.From?.Username);
-                await bot.SendMessage(chatId, _opt.WelcomeMessage, cancellationToken: ct);
+                await bot.SendMessage(chatId, BotTexts.Welcome, cancellationToken: ct);
                 break;
 
             case "/stop":
                 await store.RemoveAsync(chatId, ct);
                 log.LogInformation("Unsubscribed {ChatId}", chatId);
-                await bot.SendMessage(chatId, _opt.GoodbyeMessage, cancellationToken: ct);
+                await bot.SendMessage(chatId, BotTexts.Goodbye, cancellationToken: ct);
+                break;
+
+            default:
+                await bot.SendMessage(chatId, BotTexts.Unknown, cancellationToken: ct);
                 break;
         }
     }
