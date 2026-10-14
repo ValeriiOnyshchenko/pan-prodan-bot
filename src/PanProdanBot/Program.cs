@@ -12,6 +12,7 @@ var builder = Host.CreateApplicationBuilder(args);
 // ---- Auctions ----
 builder.Services.AddOptions<MonitorOptions>().Bind(builder.Configuration.GetSection(MonitorOptions.Section));
 builder.Services.AddSingleton<LotFilter>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 void Web(HttpClient c)
 {

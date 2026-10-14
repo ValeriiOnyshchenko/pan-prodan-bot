@@ -5,8 +5,9 @@ using PanProdanBot.Storage;
 namespace PanProdanBot.Auctions;
 
 /// <summary>
-/// Every <see cref="MonitorOptions.IntervalMinutes"/>: read active lots from every source,
-/// pick the ones not seen before, filter by region/price and broadcast the matches.
+/// Clock-aligned schedule (IntervalMinutes = 60 → every hour at xx:00):
+/// at xx:55 read all sources and collect new lots that pass the filters,
+/// at xx:00 send them to all subscribers at once.
 /// </summary>
 public sealed class AuctionMonitorService(
     IEnumerable<ILotSource> sources,
@@ -14,6 +15,7 @@ public sealed class AuctionMonitorService(
     SeenLotStore seen,
     Broadcaster broadcaster,
     IOptions<MonitorOptions> options,
+    TimeProvider clock,
     ILogger<AuctionMonitorService> log) : BackgroundService
 {
     private readonly MonitorOptions _o = options.Value;
@@ -26,95 +28,96 @@ public sealed class AuctionMonitorService(
             return;
         }
 
-        await Task.Delay(TimeSpan.FromSeconds(_o.StartupDelaySeconds), ct);
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(_o.IntervalMinutes));
-        do
+        while (!ct.IsCancellationRequested)
         {
-            await RunOnceAsync(ct);
-        } while (await timer.WaitForNextTickAsync(ct));
+            var sendAt = NextSlot(clock.GetUtcNow());
+            var fetchAt = sendAt - TimeSpan.FromMinutes(Math.Clamp(_o.PrefetchMinutes, 0, _o.IntervalMinutes - 1));
+            log.LogInformation("Next check at {FetchAt:HH:mm} UTC, delivery at {SendAt:HH:mm} UTC", fetchAt, sendAt);
+
+            await DelayUntilAsync(fetchAt, ct);
+            var batch = await CollectAsync(ct);
+
+            await DelayUntilAsync(sendAt, ct);
+            await SendAsync(batch, ct);
+        }
     }
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    /// <summary>Next clock boundary of the interval, e.g. the next full hour. Always strictly in the future.</summary>
+    private DateTimeOffset NextSlot(DateTimeOffset now)
     {
-        var budget = _o.MaxLotsPerRun;
+        var interval = TimeSpan.FromMinutes(Math.Max(1, _o.IntervalMinutes));
+        var next = new DateTimeOffset((now.UtcTicks / interval.Ticks + 1) * interval.Ticks, TimeSpan.Zero);
+        // Not enough time to prefetch before the closest slot (e.g. started at 10:58) → take the following one.
+        return next - now < TimeSpan.FromMinutes(Math.Min(_o.PrefetchMinutes, 2)) ? next + interval : next;
+    }
+
+    private async Task DelayUntilAsync(DateTimeOffset when, CancellationToken ct)
+    {
+        var wait = when - clock.GetUtcNow();
+        if (wait > TimeSpan.Zero) await Task.Delay(wait, clock, ct);
+    }
+
+    // ---------------- collect ----------------
+
+    /// <summary>Reads all sources and returns new matching lots (rejected ones are remembered right away).</summary>
+    public async Task<List<(ILotSource Source, Lot Lot)>> CollectAsync(CancellationToken ct)
+    {
+        var result = new List<(ILotSource, Lot)>();
         foreach (var source in sources)
         {
             try
             {
-                budget -= await CheckSourceAsync(source, budget, ct);
+                var budget = _o.MaxLotsPerRun - result.Count;
+                foreach (var lot in await CollectSourceAsync(source, budget, ct)) result.Add((source, lot));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 log.LogError(ex, "Check of {Source} failed — will retry next time", source.Name);
             }
         }
+        log.LogInformation("Collected {Count} new lots to send", result.Count);
+        return result;
     }
 
-    /// <returns>Number of lots broadcast.</returns>
-    private async Task<int> CheckSourceAsync(ILotSource source, int budget, CancellationToken ct)
+    private async Task<List<Lot>> CollectSourceAsync(ILotSource source, int budget, CancellationToken ct)
     {
+        var matches = new List<Lot>();
         var active = await source.ListActiveAsync(ct);
         if (active.Count == 0)
         {
             log.LogWarning("{Source}: no active lots found — site down or layout changed?", source.Name);
-            return 0;
+            return matches;
         }
 
         var known = await seen.GetKeysAsync(source.Id, ct);
         var fresh = active.Where(l => !known.Contains(l.Key)).ToList();
+        var firstRun = known.Count == 0;
+        if (firstRun) budget = Math.Min(budget, _o.FirstRunSampleCount);
 
-        if (known.Count == 0)
-            return await FirstRunAsync(source, fresh, ct);
+        log.LogInformation("{Source}: {Active} active, {New} new{First}", source.Name, active.Count, fresh.Count,
+            firstRun ? " — first run: existing lots are remembered silently" : "");
 
-        log.LogInformation("{Source}: {Active} active, {New} new", source.Name, active.Count, fresh.Count);
-
-        var broadcast = 0;
         foreach (var summary in fresh)
         {
-            if (broadcast >= budget)
+            if (matches.Count >= budget)
             {
-                log.LogWarning("{Source}: per-run limit reached, the rest waits for the next check", source.Name);
+                if (!firstRun) log.LogWarning("{Source}: per-run limit reached, the rest waits for the next check", source.Name);
                 break;
             }
-
-            var lot = await LoadMatchAsync(source, summary, ct);
-            if (lot is null) continue;
-
-            await broadcaster.BroadcastLotAsync(lot, ct);
-            await seen.MarkAsync(lot.Key, source.Id, "broadcast", ct);
-            broadcast++;
+            if (await LoadMatchAsync(source, summary, markRejected: !firstRun, ct) is { } lot) matches.Add(lot);
         }
-        return broadcast;
+
+        if (firstRun)
+        {
+            // Remember everything else BEFORE sending anything — a crash later can never cause a flood.
+            var sample = matches.Select(l => l.Key).ToHashSet();
+            await seen.MarkManyAsync(fresh.Select(l => l.Key).Where(k => !sample.Contains(k)), source.Id, "baseline", ct);
+        }
+        return matches;
     }
 
-    /// <summary>
-    /// First check of a source: remember everything that already exists (no flood),
-    /// except a small sample that is broadcast so subscribers see the bot working.
-    /// </summary>
-    private async Task<int> FirstRunAsync(ILotSource source, List<LotSummary> fresh, CancellationToken ct)
-    {
-        var samples = new List<Lot>();
-        foreach (var summary in fresh)
-        {
-            if (samples.Count >= _o.FirstRunSampleCount) break;
-            if (await LoadMatchAsync(source, summary, ct, markRejected: false) is { } lot) samples.Add(lot);
-        }
-
-        var sampleKeys = samples.Select(l => l.Key).ToHashSet();
-        await seen.MarkManyAsync(fresh.Select(l => l.Key).Where(k => !sampleKeys.Contains(k)), source.Id, "baseline", ct);
-        log.LogInformation("{Source}: first run — remembered {Count} existing lots, sending {Samples} sample(s)",
-            source.Name, fresh.Count - samples.Count, samples.Count);
-
-        foreach (var lot in samples)
-        {
-            await broadcaster.BroadcastLotAsync(lot, ct);
-            await seen.MarkAsync(lot.Key, source.Id, "broadcast", ct);
-        }
-        return samples.Count;
-    }
-
-    /// <summary>Returns the lot if it passes the filter; null if rejected or details could not be loaded.</summary>
-    private async Task<Lot?> LoadMatchAsync(ILotSource source, LotSummary summary, CancellationToken ct, bool markRejected = true)
+    /// <summary>Returns the lot if it passes the filters; null if rejected or details could not be loaded.</summary>
+    private async Task<Lot?> LoadMatchAsync(ILotSource source, LotSummary summary, bool markRejected, CancellationToken ct)
     {
         if (filter.PreCheck(summary) == false)
         {
@@ -134,13 +137,31 @@ public sealed class AuctionMonitorService(
             return null;
         }
 
-        if (lot.Price is not { } price || !filter.Passes(lot.Region, price))
+        if (!filter.Passes(lot))
         {
             if (markRejected) await seen.MarkAsync(summary.Key, source.Id, "rejected", ct);
             return null;
         }
 
-        log.LogInformation("{Key}: match — {Region}, {Price}", lot.Key, lot.Region, Text.Money(price));
+        log.LogInformation("{Key}: match — {Region}, {Price}", lot.Key, lot.Region, lot.Price is { } p ? Text.Money(p) : "?");
         return lot;
+    }
+
+    // ---------------- send ----------------
+
+    private async Task SendAsync(List<(ILotSource Source, Lot Lot)> batch, CancellationToken ct)
+    {
+        foreach (var (source, lot) in batch)
+        {
+            try
+            {
+                await broadcaster.BroadcastLotAsync(lot, ct);
+                await seen.MarkAsync(lot.Key, source.Id, "broadcast", ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogError(ex, "Broadcast of {Key} failed — will retry next time", lot.Key);
+            }
+        }
     }
 }

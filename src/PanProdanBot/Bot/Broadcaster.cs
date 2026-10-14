@@ -14,6 +14,7 @@ public sealed class Broadcaster(
     ITelegramBotClient bot,
     SubscriberStore store,
     LatestLotStore latest,
+    LotFilter filter,
     IHttpClientFactory httpFactory,
     ILogger<Broadcaster> log)
 {
@@ -27,7 +28,7 @@ public sealed class Broadcaster(
     public async Task<int> BroadcastLotAsync(Lot lot, CancellationToken ct = default)
     {
         var prepared = await PrepareAsync(lot, fileIds: null, ct);
-        var sent = await SendToAllAsync(chatId => SendLotAsync(chatId, prepared, ct), prepared.PhotoCount + 1, ct);
+        var sent = await SendToAllAsync(chatId => SendLotAsync(chatId, prepared, ct), Math.Max(1, prepared.PhotoCount), ct);
         await latest.SaveAsync(lot, prepared.FileIds, ct);
 
         log.LogInformation("Lot {Key} sent to {Sent} subscribers ({Photos} photos)", lot.Key, sent, prepared.PhotoCount);
@@ -42,6 +43,7 @@ public sealed class Broadcaster(
     {
         var lots = (await latest.GetAllAsync(ct))
             .Where(x => x.Lot.DeadlineUtc is not { } d || d > DateTimeOffset.UtcNow)
+            .Where(x => filter.Passes(x.Lot)) // filters may have changed since the lot was sent
             .ToList();
         if (lots.Count == 0) return;
 
@@ -60,7 +62,8 @@ public sealed class Broadcaster(
     private sealed class PreparedLot
     {
         public required Lot Lot { get; init; }
-        public required string Text { get; init; }
+        public required string Caption { get; init; }   // under photos, ≤ 1024 chars
+        public required string Text { get; init; }      // text-only fallback, ≤ 4096 chars
         public required InlineKeyboardMarkup Button { get; init; }
         public List<byte[]> Photos { get; init; } = [];
         public string[]? FileIds { get; set; }
@@ -70,39 +73,47 @@ public sealed class Broadcaster(
     private async Task<PreparedLot> PrepareAsync(Lot lot, string[]? fileIds, CancellationToken ct) => new()
     {
         Lot = lot,
-        Text = LotFormatter.Format(lot),
+        Caption = LotFormatter.Format(lot, LotFormatter.CaptionLimit),
+        Text = LotFormatter.Format(lot, LotFormatter.TextLimit),
         Button = new InlineKeyboardMarkup(InlineKeyboardButton.WithUrl("Відкрити лот ↗", lot.Url)),
         FileIds = fileIds is { Length: > 0 } ? fileIds : null,
         Photos = fileIds is { Length: > 0 } ? [] : await DownloadPhotosAsync(lot.ImageUrls, ct),
     };
 
-    /// <summary>Photo album (if any) followed by the detailed text with an "open lot" button.</summary>
+    /// <summary>
+    /// One lot = one message: photos with the details as caption.
+    /// A single photo also gets the «Відкрити лот ↗» button (Telegram doesn't allow buttons on albums;
+    /// there the link is in the caption). Without photos — a text message with the button.
+    /// </summary>
     private async Task SendLotAsync(long chatId, PreparedLot p, CancellationToken ct)
     {
         if (p.PhotoCount > 0)
         {
             try
             {
-                var media = (p.FileIds is { } ids
-                    ? ids.Select(InputFile.FromFileId).Cast<InputFile>()
-                    : p.Photos.Select((bytes, i) => (InputFile)InputFile.FromStream(new MemoryStream(bytes), $"photo{i + 1}.jpg")))
-                    .Select(f => new InputMediaPhoto(f)).ToArray();
+                var files = p.FileIds is { } ids
+                    ? ids.Select(id => (InputFile)InputFile.FromFileId(id)).ToArray()
+                    : p.Photos.Select((bytes, i) => (InputFile)InputFile.FromStream(new MemoryStream(bytes), $"photo{i + 1}.jpg")).ToArray();
 
-                if (media.Length == 1)
+                if (files.Length == 1)
                 {
-                    var m = await bot.SendPhoto(chatId, media[0].Media, cancellationToken: ct);
-                    p.FileIds ??= [m.Photo!.Last().FileId]; // later sends reuse the uploaded photos
+                    var m = await bot.SendPhoto(chatId, files[0], p.Caption, ParseMode.Html, replyMarkup: p.Button, cancellationToken: ct);
+                    p.FileIds ??= [m.Photo!.Last().FileId];
                 }
                 else
                 {
+                    var media = files.Select((f, i) => i == 0
+                        ? new InputMediaPhoto(f) { Caption = p.Caption, ParseMode = ParseMode.Html }
+                        : new InputMediaPhoto(f)).ToArray();
                     var msgs = await bot.SendMediaGroup(chatId, media, cancellationToken: ct);
-                    p.FileIds ??= msgs.Select(x => x.Photo!.Last().FileId).ToArray();
+                    p.FileIds ??= msgs.Select(x => x.Photo!.Last().FileId).ToArray(); // later sends reuse the uploaded photos
                 }
+                return;
             }
             catch (ApiRequestException ex) when (ex.ErrorCode == 400)
             {
-                // A bad photo must not stop the lot itself from being delivered.
-                log.LogWarning("Photos for {Key} rejected by Telegram: {Error}", p.Lot.Key, ex.Message);
+                // Bad photo or caption — fall back to a text message so the lot is still delivered.
+                log.LogWarning("Photos for {Key} rejected by Telegram, sending text only: {Error}", p.Lot.Key, ex.Message);
             }
         }
 

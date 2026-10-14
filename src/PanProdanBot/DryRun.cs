@@ -24,7 +24,9 @@ public static class DryRun
             var active = await source.ListActiveAsync(ct);
             var shown = 0;
             var checkedCount = 0;
-            Console.WriteLine($"##### {source.Name}: {active.Count} active lots");
+            var partial = active.Where(a => LotFilter.IsPartial(a.Title)).ToList();
+            Console.WriteLine($"##### {source.Name}: {active.Count} active lots, {partial.Count} partial (skipped)");
+            foreach (var pl in partial) Console.WriteLine("  partial: " + Text.Truncate(pl.Title ?? "", 90));
 
             foreach (var s in active)
             {
@@ -33,12 +35,14 @@ public static class DryRun
                 checkedCount++;
                 await Task.Delay(o.RequestDelayMs, ct);
                 var lot = await source.GetLotAsync(s, ct);
-                if (lot.Price is not { } price || !filter.Passes(lot.Region, price)) continue;
+                if (!filter.Passes(lot) || lot.Price is not { } price) continue;
 
                 shown++;
                 Console.WriteLine($"----- {lot.Key} | region={lot.Region} | price={price} | limit={filter.LimitFor(lot.Region)} | photos={lot.ImageUrls.Count}");
                 foreach (var img in lot.ImageUrls) Console.WriteLine("  img: " + img);
-                Console.WriteLine(LotFormatter.Format(lot));
+                var caption = LotFormatter.Format(lot);
+                Console.WriteLine($"(caption: {LotFormatter.Visible(caption)}/{LotFormatter.CaptionLimit} chars)");
+                Console.WriteLine(caption);
                 Console.WriteLine();
             }
             Console.WriteLine($"(opened {checkedCount} lot pages)\n");

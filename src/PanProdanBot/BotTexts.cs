@@ -23,7 +23,7 @@ public static class BotTexts
         $"{Frequency(o)} переглядаю нові лоти:\n" +
         Sources + "\n\n" +
         "Надсилаю лише вигідні:\n" +
-        Filters(o) + "\n\n" +
+        Filters(o) + Partial(o) + "\n\n" +
         "Натисніть «Почати», щоб підписатися. Відписатися — /stop.", 512);
 
     // ---- Chat messages ----
@@ -33,9 +33,10 @@ public static class BotTexts
         $"{Frequency(o)} я переглядаю нові лоти на аукціонах:\n" +
         Sources + "\n\n" +
         "Надсилаю лише ті, що проходять мої фільтри за стартовою ціною:\n" +
-        Filters(o) + "\n\n" +
+        Filters(o) + "\n" +
+        PartialLong(o) + "\n" +
         "У кожному повідомленні — фото, ціна, адреса, дати аукціону та посилання на лот. " +
-        "Щойно з'явиться щось нове — одразу напишу.\n\n" +
+        $"{Delivery(o)}.\n\n" +
         "Щоб відписатися, надішліть /stop.";
 
     /// <summary>Sent after the welcome, before the latest lot of each auction.</summary>
@@ -60,6 +61,19 @@ public static class BotTexts
     private static string Filters(MonitorOptions o) =>
         string.Join("\n", o.RegionRules.Select(r => $"• {r.Name} — до {Text.Money(r.MaxPrice)}")
             .Append($"• {(o.RegionRules.Count > 0 ? "Інші області" : "Усі області")} — до {Text.Money(o.DefaultMaxPrice)}"));
+
+    private static string Partial(MonitorOptions o) =>
+        o.SkipPartialLots ? "\n• Без часток об'єктів (1/2 квартири тощо)" : "";
+
+    private static string PartialLong(MonitorOptions o) =>
+        o.SkipPartialLots ? "\nЛоти, що є лише частиною об'єкта (наприклад, «1/2 частка квартири»), я пропускаю.\n" : "";
+
+    private static string Delivery(MonitorOptions o) => o.IntervalMinutes switch
+    {
+        60 => "Нові лоти надсилаю всім одночасно — на початку кожної години",
+        var m when m % 60 == 0 => $"Нові лоти надсилаю всім одночасно — кожні {m / 60} год. на початку години",
+        var m => $"Нові лоти надсилаю всім одночасно — кожні {m} хв.",
+    };
 
     private static string Frequency(MonitorOptions o) => o.IntervalMinutes switch
     {

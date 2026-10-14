@@ -36,7 +36,8 @@ public sealed partial class GalcontractSource(HttpClient http, IOptions<MonitorO
             if (auctionId.Length == 0) continue;
 
             var price = Text.ParsePrice(card.QuerySelector("span.h6")?.TextContent);
-            result.Add(new LotSummary($"{Id}:{auctionId}", procedureId, Region: null, price));
+            var title = Text.Clean(card.QuerySelector("a.h4")?.TextContent);
+            result.Add(new LotSummary($"{Id}:{auctionId}", procedureId, Region: null, price, title));
         }
 
         log.LogInformation("Galcontract: {Count} lots accept applications", result.Count);

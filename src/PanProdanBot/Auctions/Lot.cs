@@ -5,7 +5,8 @@ namespace PanProdanBot.Auctions;
 /// <param name="Region">Region if the list page shows it, otherwise null (resolved from details).</param>
 /// <param name="Price">Start price if the list page shows it.</param>
 /// <param name="DetailsId">Source-specific id used to load details.</param>
-public sealed record LotSummary(string Key, string DetailsId, string? Region, decimal? Price);
+/// <param name="Title">Title from the list page (used to skip partial lots early).</param>
+public sealed record LotSummary(string Key, string DetailsId, string? Region, decimal? Price, string? Title = null);
 
 /// <summary>Full lot information used for filtering and for the Telegram message.</summary>
 public sealed class Lot

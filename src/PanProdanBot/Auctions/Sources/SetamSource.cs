@@ -44,7 +44,8 @@ public sealed partial class SetamSource(HttpClient http, IOptions<MonitorOptions
 
                 var region = Text.Clean(card.QuerySelector(".region-item span")?.TextContent);
                 var price = Text.ParsePrice(card.QuerySelector(".start-price-item [itemprop='price']")?.TextContent);
-                result.TryAdd(id, new LotSummary($"{Id}:{id}", id, region.Length > 0 ? region : null, price));
+                var title = Text.Clean(card.QuerySelector("h3")?.TextContent);
+                result.TryAdd(id, new LotSummary($"{Id}:{id}", id, region.Length > 0 ? region : null, price, title));
             }
 
             if (cards.Length == 0 || (total is { } n && page * 20 >= n)) break;

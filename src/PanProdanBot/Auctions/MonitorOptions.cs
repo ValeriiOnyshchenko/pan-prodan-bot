@@ -6,11 +6,17 @@ public sealed class MonitorOptions
 
     public bool Enabled { get; set; } = true;
 
-    /// <summary>How often Пан Продан checks the auctions.</summary>
+    /// <summary>How often Пан Продан checks the auctions. Aligned to the clock: 60 → every hour at xx:00.</summary>
     public int IntervalMinutes { get; set; } = 60;
 
-    /// <summary>Delay before the first check after start.</summary>
-    public int StartupDelaySeconds { get; set; } = 30;
+    /// <summary>
+    /// Sites are read this many minutes before the scheduled time, so the messages
+    /// go out to everyone exactly at the start of the hour (xx:00).
+    /// </summary>
+    public int PrefetchMinutes { get; set; } = 5;
+
+    /// <summary>Skip lots that are only a share of an object, e.g. «1/2 частка квартири».</summary>
+    public bool SkipPartialLots { get; set; } = true;
 
     /// <summary>Pause between HTTP requests to the same site — be polite.</summary>
     public int RequestDelayMs { get; set; } = 1000;

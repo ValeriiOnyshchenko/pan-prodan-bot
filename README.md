@@ -1,6 +1,6 @@
 # PanProdanBot — «Пан Продан»
 
-Telegram bot (C# / .NET 10). Пан Продан checks Ukrainian auctions every hour, picks new lots that pass his region/price filters and broadcasts them — with photos, price, address, dates and a link — to everyone who pressed **Start**. He speaks **Ukrainian only**.
+Telegram bot (C# / .NET 10). Пан Продан checks Ukrainian auctions every hour, picks new lots that pass his filters (region/price, no partial shares) and broadcasts them — one message per lot with photos, price, address, dates and a link — to everyone who pressed **Start**, all at the same time at the start of the hour (xx:00). He speaks **Ukrainian only**.
 
 - **Start** → user is subscribed: welcome message (sources and filters) + the **latest lot from each auction** that passed the filters
 - **/stop** or blocking the bot → user is unsubscribed
@@ -9,12 +9,14 @@ Telegram bot (C# / .NET 10). Пан Продан checks Ukrainian auctions every
 ## How it works
 
 ```
-every 60 min ──► Galcontract list ──► new lot? ──► Prozorro.Sale API (details) ──┐
-             └─► SETAM list (all pages) ──► new lot? ──► lot page (details) ─────┤
-                                                                                 ▼
-                                         region/price filter ──► broadcast to subscribers
-                                                                 (photo album + details + "Відкрити лот ↗" button)
+xx:55  collect ──► Galcontract list ──► new lot? ──► Prozorro.Sale API (details) ──┐
+               └─► SETAM list (all pages) ──► new lot? ──► lot page (details) ─────┤
+                                                                                   ▼
+                             partial-share filter + region/price filter ──► batch of matches
+xx:00  send    ──► every lot to every subscriber, all at once (one message per lot)
 ```
+
+The schedule is aligned to the clock, not to the deploy time: with `IntervalMinutes = 60` the sites are read at xx:55 (`PrefetchMinutes`) and the batch is delivered at xx:00 sharp. After a deploy the first check happens at the next full hour.
 
 ### Sources
 
@@ -23,7 +25,16 @@ every 60 min ──► Galcontract list ──► new lot? ──► Prozorro.Sa
 | **Біржа «Галконтракт»**, мала приватизація | [list](https://sales.tsbgalcontract.org.ua/PositionList.aspx?&page=1&rows=1000&sidx=3&sord=0&filter_type=filter&fvAuctionDir_0=small_privatization&action=Y&status=all), only lots with status *«Прийняття заяв на участь»* | Public Prozorro.Sale API — `procedure.prozorro.sale/api/procedures/{id}` (JSON) |
 | **СЕТАМ**, нерухомість | [setam.net.ua/neruhomist](https://setam.net.ua/neruhomist), all pages of upcoming auctions (*«Реєстрація учасників»*), ~12 pages | Lot page `setam.net.ua/auction/{id}` (HTML) |
 
-### Filters (start price, UAH)
+### Filter 1 — partial lots are skipped
+
+Neither site has a structured "share" field (checked: SETAM lot attributes, Prozorro.Sale `items`), so the **title** is checked with a regex (`LotFilter.IsPartial`, case-insensitive). Skipped when the title contains a fraction followed by:
+
+- `частка / частки / частку / часток / частина / частини / частину / частин / ч.` — «1/2 частка квартири», «1/2 ч. житлового будинку», «7/25 часток домоволодіння», «14/100 ід. частини»
+- or directly the object — «1/2 Чотирикімнатної квартири», «1/3 квартири», «1/2 нежитлової будівлі»
+
+Not treated as partial: address fractions («буд. 5/7», «кв. 167/1», «№ 140/1») and «що становить / складає 1/10 частину…» (a separate premise described relative to the building). On 14.10.2026 this skipped 65 of 224 SETAM lots and 5 of 139 Galcontract lots. Switch off with `SkipPartialLots = false`.
+
+### Filter 2 — start price by region (UAH)
 
 | Region | Passes if price is below |
 |---|---|
@@ -44,18 +55,21 @@ Configured in `appsettings.json` → `Monitor` (`DefaultMaxPrice`, `RegionRules`
 
 Every broadcast lot is saved as the latest lot of its source (`latest_lots` table, incl. Telegram photo ids). Right after the welcome, a new subscriber gets «Ось останні пропозиції…» followed by those lots — one per auction. Lots whose application deadline has passed are skipped; if none are left, only the welcome is sent. Photos are re-sent by Telegram file id, so nothing is downloaded again.
 
-### Message format
+### Message format — one lot = one message
 
-1. Photo album — up to `MaxImages` (6) photos, downloaded by the bot and uploaded once, then re-sent by Telegram file id.
-2. Text: title, start price (± ПДВ), guarantee fee, auction type, address, area, category, application deadline, auction date, encumbrance warning (SETAM), description (≤1200 chars), map link (Galcontract), link to the lot.
-3. Button **«Відкрити лот ↗»**.
+- **Photos + caption:** up to `MaxImages` (6) photos as one album with the details as its caption. Telegram limits captions to 1024 characters, so the description is shortened to fit (title, price and dates are always kept). Photos are downloaded and uploaded once, then re-sent by Telegram file id.
+- **Caption contents:** title, start price (± ПДВ), guarantee fee, auction type, address, area, category, application deadline, auction date, encumbrance warning (SETAM), description, map link (Galcontract), «Відкрити лот» link.
+- **Button «Відкрити лот ↗»:** only on single-photo and text-only messages — Telegram doesn't allow buttons on albums, so there the link is in the caption.
+- **No photos** (or Telegram rejects them): a text message (up to 4096 chars) with the button.
 
 ### Settings (`appsettings.json` → `Monitor`, or env vars like `Monitor__IntervalMinutes=30`)
 
 | Key | Default | Meaning |
 |---|---|---|
 | `Enabled` | `true` | Turn monitoring on/off |
-| `IntervalMinutes` | `60` | Check frequency |
+| `IntervalMinutes` | `60` | Check frequency, aligned to the clock (60 → every hour at xx:00) |
+| `PrefetchMinutes` | `5` | Read the sites this many minutes early, so delivery is exactly at xx:00 |
+| `SkipPartialLots` | `true` | Skip lots that are only a share of an object |
 | `MaxImages` | `6` | Photos per lot (Telegram max 10) |
 | `MaxLotsPerRun` | `30` | Safety cap per check |
 | `FirstRunSampleCount` | `1` | Sample lots sent on the very first check |
