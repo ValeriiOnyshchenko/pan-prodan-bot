@@ -13,7 +13,7 @@ namespace PanProdanBot.Bot;
 public sealed class Broadcaster(
     ITelegramBotClient bot,
     SubscriberStore store,
-    LatestLotStore latest,
+    RecentLotStore recent,
     LotFilter filter,
     IHttpClientFactory httpFactory,
     ILogger<Broadcaster> log)
@@ -24,38 +24,55 @@ public sealed class Broadcaster(
     public Task<int> BroadcastAsync(string text, CancellationToken ct = default) =>
         SendToAllAsync(chatId => bot.SendMessage(chatId, text, cancellationToken: ct), 1, ct);
 
-    /// <summary>Sends the lot to all subscribers and remembers it as the latest lot of its source.</summary>
+    /// <summary>
+    /// Sends the lot to every subscriber who hasn't received it yet (delivery log) and keeps it
+    /// among the recent lots shown to new subscribers.
+    /// </summary>
     public async Task<int> BroadcastLotAsync(Lot lot, CancellationToken ct = default)
     {
         var prepared = await PrepareAsync(lot, fileIds: null, ct);
-        var sent = await SendToAllAsync(chatId => SendLotAsync(chatId, prepared, ct), Math.Max(1, prepared.PhotoCount), ct);
-        await latest.SaveAsync(lot, prepared.FileIds, ct);
+        var already = await store.GetRecipientsAsync(lot.Key, ct);
 
-        log.LogInformation("Lot {Key} sent to {Sent} subscribers ({Photos} photos)", lot.Key, sent, prepared.PhotoCount);
+        var sent = await SendToAllAsync(async chatId =>
+        {
+            await SendLotAsync(chatId, prepared, ct);
+            await store.MarkDeliveredAsync(chatId, lot.Key, ct);
+        }, Math.Max(1, prepared.PhotoCount), ct, skip: already.Contains);
+        await recent.SaveAsync(lot, prepared.FileIds, ct);
+
+        log.LogInformation("Lot {Key} sent to {Sent} subscribers, {Skipped} already had it ({Photos} photos)",
+            lot.Key, sent, already.Count, prepared.PhotoCount);
         return sent;
     }
 
     /// <summary>
-    /// For a new subscriber: the latest lot of each source that passed the filters,
-    /// skipping lots whose application deadline has already passed.
+    /// For a new subscriber: per source, the newest recently broadcast lot that still passes the
+    /// current filters, hasn't expired and wasn't delivered to this chat yet.
     /// </summary>
     public async Task SendLatestLotsAsync(long chatId, CancellationToken ct = default)
     {
-        var lots = (await latest.GetAllAsync(ct))
-            .Where(x => x.Lot.DeadlineUtc is not { } d || d > DateTimeOffset.UtcNow)
+        var now = DateTimeOffset.UtcNow;
+        var delivered = await store.GetDeliveredAsync(chatId, ct);
+        var picks = (await recent.GetAllAsync(ct)) // newest first
+            .Where(x => !delivered.Contains(x.Lot.Key))
+            .Where(x => x.Lot.DeadlineUtc is not { } d || d > now)
             .Where(x => filter.Passes(x.Lot)) // filters may have changed since the lot was sent
+            .GroupBy(x => x.Source)
+            .Select(g => g.First())
+            .OrderBy(x => x.Source)
             .ToList();
-        if (lots.Count == 0) return;
+        if (picks.Count == 0) return;
 
         await bot.SendMessage(chatId, BotTexts.LatestIntro, cancellationToken: ct);
-        foreach (var (lot, fileIds) in lots)
+        foreach (var (lot, _, fileIds) in picks)
         {
             var prepared = await PrepareAsync(lot, fileIds, ct);
             await SendLotAsync(chatId, prepared, ct);
-            if (fileIds is null && prepared.FileIds is { } ids) await latest.SaveFileIdsAsync(lot, ids, ct);
+            await store.MarkDeliveredAsync(chatId, lot.Key, ct);
+            if (fileIds is null && prepared.FileIds is { } ids) await recent.SaveFileIdsAsync(lot.Key, ids, ct);
             await Task.Delay(TimeSpan.FromSeconds(1), ct); // per-chat limit: ~1 msg/sec
         }
-        log.LogInformation("Sent {Count} latest lots to new subscriber {ChatId}", lots.Count, chatId);
+        log.LogInformation("Sent {Count} latest lots to new subscriber {ChatId}", picks.Count, chatId);
     }
 
     /// <summary>Lot ready to send: text, button and photos (bytes for the first upload, then Telegram file ids).</summary>
@@ -123,9 +140,9 @@ public sealed class Broadcaster(
             cancellationToken: ct);
     }
 
-    private async Task<int> SendToAllAsync(Func<long, Task> send, int messagesPerChat, CancellationToken ct)
+    private async Task<int> SendToAllAsync(Func<long, Task> send, int messagesPerChat, CancellationToken ct, Func<long, bool>? skip = null)
     {
-        var chats = await store.GetAllAsync(ct);
+        var chats = (await store.GetAllAsync(ct)).Where(c => skip?.Invoke(c) != true).ToList();
         var sent = 0;
 
         foreach (var chatId in chats)

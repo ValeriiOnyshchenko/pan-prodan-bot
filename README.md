@@ -53,7 +53,11 @@ Configured in `appsettings.json` → `Monitor` (`DefaultMaxPrice`, `RegionRules`
 
 ### Latest lots for new subscribers
 
-Every broadcast lot is saved as the latest lot of its source (`latest_lots` table, incl. Telegram photo ids). Right after the welcome, a new subscriber gets «Ось останні пропозиції…» followed by those lots — one per auction. Lots whose application deadline has passed are skipped; if none are left, only the welcome is sent. Photos are re-sent by Telegram file id, so nothing is downloaded again.
+The last 20 broadcast lots of each auction are kept (`recent_lots` table, incl. Telegram photo ids). Right after the welcome, a new subscriber gets «Ось останні пропозиції…» and, **per auction, the newest of those lots that still passes the current filters, hasn't expired and wasn't delivered to this user yet**. If an auction has no such lot, it's simply left out. Photos are re-sent by Telegram file id, so nothing is downloaded again.
+
+### No duplicates — per-user delivery log
+
+Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The hourly broadcast skips users who already have the lot (e.g. got it from /start, or a broadcast was interrupted and retried), and /start never shows a lot the user already received. `/stop` (or blocking the bot) deletes the user together with their delivery log, so a later /start starts from scratch. Records older than 90 days are pruned.
 
 ### Message format — one lot = one message
 
@@ -86,7 +90,7 @@ Every broadcast lot is saved as the latest lot of its source (`latest_lots` tabl
 | `src/PanProdanBot/Auctions/` | Monitor service, filter, message formatter, models |
 | `src/PanProdanBot/Auctions/Sources/` | `GalcontractSource`, `SetamSource` — one class per site |
 | `src/PanProdanBot/Bot/` | Polling service, update handler, broadcaster |
-| `src/PanProdanBot/Storage/` | SQLite: subscribers, seen lots, latest lot per source |
+| `src/PanProdanBot/Storage/` | SQLite: subscribers + delivery log, seen lots, recent lots per source |
 | `src/PanProdanBot/DryRun.cs` | `--dry-run` preview mode |
 | `assets/avatar.png` / `.svg` | Bot avatar (upload via BotFather) |
 | `deploy/` | VM setup script and the remote deploy script used by CI |
@@ -178,8 +182,8 @@ ssh -i $KEY $VM "docker start panprodanbot"    # after running locally
 # Last 10 lots that were broadcast
 "SELECT key, seen_at FROM seen_lots WHERE outcome='broadcast' ORDER BY seen_at DESC LIMIT 10;" | ssh -i $KEY $VM "docker run --rm -i -v panprodanbot-data:/data alpine sh -c 'apk add -q sqlite && sqlite3 -header -column /data/bot.db'"
 
-# Latest lot per source (what new subscribers get)
-"SELECT source, json_extract(lot_json, '$.Title') AS title, sent_at FROM latest_lots;" | ssh -i $KEY $VM "docker run --rm -i -v panprodanbot-data:/data alpine sh -c 'apk add -q sqlite && sqlite3 -header -column /data/bot.db'"
+# Recent lots per source (new subscribers get the newest valid one of each)
+"SELECT source, substr(json_extract(lot_json, '$.Title'), 1, 60) AS title, sent_at FROM recent_lots ORDER BY sent_at DESC;" | ssh -i $KEY $VM "docker run --rm -i -v panprodanbot-data:/data alpine sh -c 'apk add -q sqlite && sqlite3 -header -column /data/bot.db'"
 
 # Monitor activity in the logs
 ssh -i $KEY $VM "docker logs --since 3h panprodanbot 2>&1 | grep -E 'Galcontract|SETAM|match|Lot '"

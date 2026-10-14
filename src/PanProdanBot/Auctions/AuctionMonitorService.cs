@@ -13,6 +13,7 @@ public sealed class AuctionMonitorService(
     IEnumerable<ILotSource> sources,
     LotFilter filter,
     SeenLotStore seen,
+    SubscriberStore subscribers,
     Broadcaster broadcaster,
     IOptions<MonitorOptions> options,
     TimeProvider clock,
@@ -151,6 +152,8 @@ public sealed class AuctionMonitorService(
 
     private async Task SendAsync(List<(ILotSource Source, Lot Lot)> batch, CancellationToken ct)
     {
+        await subscribers.PruneDeliveriesAsync(TimeSpan.FromDays(90), ct);
+
         foreach (var (source, lot) in batch)
         {
             try

@@ -3,7 +3,11 @@ using Microsoft.Extensions.Options;
 
 namespace PanProdanBot.Storage;
 
-/// <summary>Stores chat ids of users who pressed Start. Thread-safe; one short-lived connection per call.</summary>
+/// <summary>
+/// Subscribers (chat ids of users who pressed Start) and the per-user delivery log —
+/// which lots each subscriber already got, so nobody receives the same lot twice.
+/// Thread-safe; one short-lived connection per call.
+/// </summary>
 public sealed class SubscriberStore
 {
     private readonly string _connectionString;
@@ -23,6 +27,13 @@ public sealed class SubscriberStore
                 first_name  TEXT,
                 subscribed  TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS deliveries (
+                chat_id     INTEGER NOT NULL,
+                lot_key     TEXT NOT NULL,
+                sent_at     TEXT NOT NULL,
+                PRIMARY KEY (chat_id, lot_key)
+            );
+            CREATE INDEX IF NOT EXISTS ix_deliveries_lot ON deliveries(lot_key);
             """;
         cmd.ExecuteNonQuery();
     }
@@ -47,9 +58,57 @@ public sealed class SubscriberStore
     {
         await using var db = Open();
         await using var cmd = db.CreateCommand();
-        cmd.CommandText = "DELETE FROM subscribers WHERE chat_id = $id;";
+        // Unsubscribing forgets the user's delivery history too: a later /start begins from scratch.
+        cmd.CommandText = "DELETE FROM deliveries WHERE chat_id = $id; DELETE FROM subscribers WHERE chat_id = $id;";
         cmd.Parameters.AddWithValue("$id", chatId);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    /// <summary>Chats that already received this lot.</summary>
+    public async Task<HashSet<long>> GetRecipientsAsync(string lotKey, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT chat_id FROM deliveries WHERE lot_key = $k;";
+        cmd.Parameters.AddWithValue("$k", lotKey);
+        var result = new HashSet<long>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) result.Add(r.GetInt64(0));
+        return result;
+    }
+
+    /// <summary>Lots this chat already received.</summary>
+    public async Task<HashSet<string>> GetDeliveredAsync(long chatId, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT lot_key FROM deliveries WHERE chat_id = $c;";
+        cmd.Parameters.AddWithValue("$c", chatId);
+        var result = new HashSet<string>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) result.Add(r.GetString(0));
+        return result;
+    }
+
+    public async Task MarkDeliveredAsync(long chatId, string lotKey, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "INSERT OR IGNORE INTO deliveries (chat_id, lot_key, sent_at) VALUES ($c, $k, $t);";
+        cmd.Parameters.AddWithValue("$c", chatId);
+        cmd.Parameters.AddWithValue("$k", lotKey);
+        cmd.Parameters.AddWithValue("$t", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Drops delivery records older than <paramref name="age"/> (those lots are long closed).</summary>
+    public async Task PruneDeliveriesAsync(TimeSpan age, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "DELETE FROM deliveries WHERE sent_at < $t;";
+        cmd.Parameters.AddWithValue("$t", DateTime.UtcNow.Subtract(age).ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<IReadOnlyList<long>> GetAllAsync(CancellationToken ct = default)
