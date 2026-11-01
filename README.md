@@ -9,14 +9,14 @@ Telegram bot (C# / .NET 10). Пан Продан checks Ukrainian auctions every
 ## How it works
 
 ```
-xx:55  collect ──► Galcontract list ──► new lot? ──► Prozorro.Sale API (details) ──┐
+xx:45  collect ──► Galcontract list ──► new lot? ──► Prozorro.Sale API (details) ──┐
                └─► SETAM list (all pages) ──► new lot? ──► lot page (details) ─────┤
                                                                                    ▼
                              partial-share filter + region/price filter ──► batch of matches
 xx:00  send    ──► every lot to every subscriber, all at once (one message per lot)
 ```
 
-The schedule is aligned to the clock, not to the deploy time: with `IntervalMinutes = 60` the sites are read at xx:55 (`PrefetchMinutes`) and the batch is delivered at xx:00 sharp. After a deploy the first check happens at the next full hour.
+The schedule is aligned to the clock, not to the deploy time: with `IntervalMinutes = 60` the sites are read and photos downloaded at xx:45 (`PrefetchMinutes`) and the batch is delivered at xx:00 sharp. After a deploy the first check happens at the next full hour.
 
 ### Sources
 
@@ -74,6 +74,7 @@ On every start the bot compares the current filters (regions, limits, partial-lo
 - If a site is down or its layout changes, the check is skipped and logged.
 - **No history, ever:** only lots published within `MaxLotAgeHours` (24 h) are sent. Older new-to-the-bot lots (e.g. after an outage, a stuck connection or a filter change) are remembered as `stale` and skipped.
 - HTTP clients come fresh from `IHttpClientFactory` on every request with a 5-minute connection lifetime, so a broken connection can't silently block a source for days (that happened on 29.10–01.11 with a long-lived client; restarting the container released ~80 lots at once).
+- **Cloudflare on procedure.prozorro.sale** (Galcontract details + photos) blocks quick bursts from the bot with `403 cf-mitigated: challenge` for minutes, but reliably accepts one request every ~6 s (verified from the server). `HostThrottle` paces all requests to `*.prozorro.sale` accordingly (≈40 s per lot with 6 photos) and, on a challenge, pauses 2 min and retries once. Photos are downloaded in the prefetch window (xx:45), so delivery at xx:00 isn't delayed. If photos still can't be downloaded, Telegram is given the URLs to fetch itself; only if that fails too, the lot goes out as text. Every skipped photo is logged with its HTTP status.
 - Failures to load lot details are logged as errors (`docker logs panprodanbot | grep "could not load"`).
 
 ### Latest lots for new subscribers
@@ -98,7 +99,9 @@ Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The ho
 | `Enabled` | `true` | Turn monitoring on/off |
 | `MaxLotAgeHours` | `24` | Never send lots published earlier than this (0 = no limit) |
 | `IntervalMinutes` | `60` | Check frequency, aligned to the clock (60 → every hour at xx:00) |
-| `PrefetchMinutes` | `5` | Read the sites this many minutes early, so delivery is exactly at xx:00 |
+| `PrefetchMinutes` | `15` | Read the sites and download photos this many minutes early, so delivery is exactly at xx:00 |
+| `ProzorroRequestIntervalMs` | `6000` | Min pause between requests to procedure.prozorro.sale (Cloudflare) |
+| `CloudflareCooldownSeconds` | `120` | Pause before one retry after a Cloudflare 403 |
 | `SkipPartialLots` | `true` | Skip lots that are only a share of an object |
 | `MaxImages` | `6` | Photos per lot (Telegram max 10) |
 | `MaxLotsPerRun` | `30` | Safety cap per check |

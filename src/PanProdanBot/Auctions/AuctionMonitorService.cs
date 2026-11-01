@@ -36,7 +36,7 @@ public sealed class AuctionMonitorService(
             log.LogInformation("Next check at {FetchAt:HH:mm} UTC, delivery at {SendAt:HH:mm} UTC", fetchAt, sendAt);
 
             await DelayUntilAsync(fetchAt, ct);
-            var batch = await CollectAsync(ct);
+            var batch = await PrepareAsync(await CollectAsync(ct), ct); // photos are downloaded before xx:00
 
             await DelayUntilAsync(sendAt, ct);
             await SendAsync(batch, ct);
@@ -157,7 +157,21 @@ public sealed class AuctionMonitorService(
 
     // ---------------- send ----------------
 
-    private async Task SendAsync(List<(ILotSource Source, Lot Lot)> batch, CancellationToken ct)
+    /// <summary>Downloads photos for the whole batch ahead of delivery (Prozorro allows only a slow request pace).</summary>
+    private async Task<List<(ILotSource Source, PreparedLot Lot)>> PrepareAsync(List<(ILotSource Source, Lot Lot)> batch, CancellationToken ct)
+    {
+        var result = new List<(ILotSource, PreparedLot)>();
+        foreach (var (source, lot) in batch)
+        {
+            var prepared = await broadcaster.PrepareAsync(lot, ct);
+            if (prepared.Photos.Count < lot.ImageUrls.Count)
+                log.LogWarning("{Key}: downloaded {Got}/{Total} photos", lot.Key, prepared.Photos.Count, lot.ImageUrls.Count);
+            result.Add((source, prepared));
+        }
+        return result;
+    }
+
+    private async Task SendAsync(List<(ILotSource Source, PreparedLot Lot)> batch, CancellationToken ct)
     {
         await subscribers.PruneDeliveriesAsync(TimeSpan.FromDays(90), ct);
 
@@ -166,11 +180,11 @@ public sealed class AuctionMonitorService(
             try
             {
                 await broadcaster.BroadcastLotAsync(lot, ct);
-                await seen.MarkAsync(lot.Key, source.Id, "broadcast", ct);
+                await seen.MarkAsync(lot.Lot.Key, source.Id, "broadcast", ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                log.LogError(ex, "Broadcast of {Key} failed — will retry next time", lot.Key);
+                log.LogError(ex, "Broadcast of {Key} failed — will retry next time", lot.Lot.Key);
             }
         }
     }

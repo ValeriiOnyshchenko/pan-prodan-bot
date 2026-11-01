@@ -13,7 +13,16 @@ public sealed class MonitorOptions
     /// Sites are read this many minutes before the scheduled time, so the messages
     /// go out to everyone exactly at the start of the hour (xx:00).
     /// </summary>
-    public int PrefetchMinutes { get; set; } = 5;
+    public int PrefetchMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// Min pause between requests to procedure.prozorro.sale (API + photos). Cloudflare blocks faster bursts;
+    /// one request per 6 s was verified to pass reliably from the server. Photos are downloaded in the prefetch window.
+    /// </summary>
+    public int ProzorroRequestIntervalMs { get; set; } = 6000;
+
+    /// <summary>After a Cloudflare challenge (403), wait this long before retrying once.</summary>
+    public int CloudflareCooldownSeconds { get; set; } = 120;
 
     /// <summary>Skip lots that are only a share of an object, e.g. «1/2 частка квартири».</summary>
     public bool SkipPartialLots { get; set; } = true;

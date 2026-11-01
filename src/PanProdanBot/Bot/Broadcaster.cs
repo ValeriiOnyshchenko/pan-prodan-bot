@@ -28,9 +28,13 @@ public sealed class Broadcaster(
     /// Sends the lot to every subscriber who hasn't received it yet (delivery log) and keeps it
     /// among the recent lots shown to new subscribers.
     /// </summary>
-    public async Task<int> BroadcastLotAsync(Lot lot, CancellationToken ct = default)
+    public async Task<int> BroadcastLotAsync(Lot lot, CancellationToken ct = default) =>
+        await BroadcastLotAsync(await PrepareAsync(lot, fileIds: null, ct), ct);
+
+    /// <summary>Same, for a lot whose photos were already downloaded (in the prefetch window before xx:00).</summary>
+    public async Task<int> BroadcastLotAsync(PreparedLot prepared, CancellationToken ct = default)
     {
-        var prepared = await PrepareAsync(lot, fileIds: null, ct);
+        var lot = prepared.Lot;
         var already = await store.GetRecipientsAsync(lot.Key, ct);
 
         var sent = await SendToAllAsync(async chatId =>
@@ -75,17 +79,8 @@ public sealed class Broadcaster(
         log.LogInformation("Sent {Count} latest lots to new subscriber {ChatId}", picks.Count, chatId);
     }
 
-    /// <summary>Lot ready to send: text, button and photos (bytes for the first upload, then Telegram file ids).</summary>
-    private sealed class PreparedLot
-    {
-        public required Lot Lot { get; init; }
-        public required string Caption { get; init; }   // under photos, ≤ 1024 chars
-        public required string Text { get; init; }      // text-only fallback, ≤ 4096 chars
-        public required InlineKeyboardMarkup Button { get; init; }
-        public List<byte[]> Photos { get; init; } = [];
-        public string[]? FileIds { get; set; }
-        public int PhotoCount => FileIds?.Length ?? Photos.Count;
-    }
+    /// <summary>Formats the lot and downloads its photos (slow for Prozorro: one request per few seconds).</summary>
+    public Task<PreparedLot> PrepareAsync(Lot lot, CancellationToken ct) => PrepareAsync(lot, fileIds: null, ct);
 
     private async Task<PreparedLot> PrepareAsync(Lot lot, string[]? fileIds, CancellationToken ct) => new()
     {
@@ -110,7 +105,10 @@ public sealed class Broadcaster(
             {
                 var files = p.FileIds is { } ids
                     ? ids.Select(id => (InputFile)InputFile.FromFileId(id)).ToArray()
-                    : p.Photos.Select((bytes, i) => (InputFile)InputFile.FromStream(new MemoryStream(bytes), $"photo{i + 1}.jpg")).ToArray();
+                    : p.Photos.Count > 0
+                        ? p.Photos.Select((bytes, i) => (InputFile)InputFile.FromStream(new MemoryStream(bytes), $"photo{i + 1}.jpg")).ToArray()
+                        // Download failed (e.g. blocked) — let Telegram fetch the photos itself.
+                        : p.PhotoUrls.Select(u => (InputFile)InputFile.FromUri(u)).ToArray();
 
                 if (files.Length == 1)
                 {
@@ -190,9 +188,14 @@ public sealed class Broadcaster(
             {
                 using var resp = await http.GetAsync(url, ct);
                 var type = resp.Content.Headers.ContentType?.MediaType ?? "";
-                if (!resp.IsSuccessStatusCode || !(type is "image/jpeg" or "image/png")) continue;
+                if (!resp.IsSuccessStatusCode || !(type is "image/jpeg" or "image/png"))
+                {
+                    log.LogWarning("Photo skipped {Url}: HTTP {Status}, {Type}", url, (int)resp.StatusCode, type);
+                    continue;
+                }
                 var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
                 if (bytes.Length is > 0 and < MaxPhotoBytes) result.Add(bytes);
+                else log.LogWarning("Photo skipped {Url}: size {Size} bytes", url, bytes.Length);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

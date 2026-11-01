@@ -13,6 +13,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddOptions<MonitorOptions>().Bind(builder.Configuration.GetSection(MonitorOptions.Section));
 builder.Services.AddSingleton<LotFilter>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<HostThrottle>();
+builder.Services.AddTransient<ThrottlingHandler>();
 
 void Web(HttpClient c)
 {
@@ -21,7 +23,8 @@ void Web(HttpClient c)
     c.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9");
 }
 builder.Services.AddHttpClient("web", Web)
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+    .AddHttpMessageHandler<ThrottlingHandler>();
 builder.Services.AddSingleton<ILotSource, GalcontractSource>();
 builder.Services.AddSingleton<ILotSource, SetamSource>();
 
