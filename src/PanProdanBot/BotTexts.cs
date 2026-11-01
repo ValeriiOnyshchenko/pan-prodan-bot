@@ -60,10 +60,27 @@ public static class BotTexts
         PartialLong(o) + "\n" +
         "Нові правила діють з цього моменту — наступні пропозиції вже будуть за ними.";
 
+    /// <summary>
+    /// One-time messages to all subscribers. Each is sent once (its id is stored in bot_state) on the first start
+    /// of a version that contains it. To send a new one: add an entry with a new id, push. Never reuse an id.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Id, string Text)> Announcements =
+    [
+        ("2026-11-real-estate-fix",
+            "⚽ Пан Продан трохи дав у штангу!\n\n" +
+            "Нещодавно я надіслав вам зайве: овець, муфлонів, оленів і навіть старенький ВАЗ 🐑🦌🚗, " +
+            "а ще кілька лотів, яким уже було по кілька днів. Перепрошую!\n\n" +
+            "Тепер усе виправлено:\n" +
+            "• надсилаю лише нерухомість — будівлі, приміщення, землю;\n" +
+            "• лише свіжі лоти — опубліковані за останню добу;\n" +
+            "• фільтри за областями та ціною — без змін.\n\n" +
+            "Дякую за терпіння! 🎩"),
+    ];
+
     // ---- Building blocks ----
 
     private const string Sources =
-        "• Біржа «Галконтракт» — мала приватизація\n" +
+        "• Біржа «Галконтракт» — мала приватизація (лише нерухомість)\n" +
         "• СЕТАМ — нерухомість";
 
     private static string Filters(MonitorOptions o) =>

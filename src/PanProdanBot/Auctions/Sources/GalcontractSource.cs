@@ -9,9 +9,12 @@ namespace PanProdanBot.Auctions.Sources;
 /// Біржа «Галконтракт», мала приватизація.
 /// The list page gives ids + price + status; details come from the public Prozorro.Sale API (clean JSON).
 /// </summary>
-public sealed partial class GalcontractSource(HttpClient http, IOptions<MonitorOptions> options, ILogger<GalcontractSource> log)
+public sealed partial class GalcontractSource(IHttpClientFactory httpFactory, IOptions<MonitorOptions> options, ILogger<GalcontractSource> log)
     : ILotSource
 {
+    /// <summary>New client per call: the factory recycles connections, so a broken connection can't stick for days.</summary>
+    private HttpClient Http => httpFactory.CreateClient("web");
+
     private const string SiteUrl = "https://sales.tsbgalcontract.org.ua";
     private const string ApiUrl = "https://procedure.prozorro.sale/api";
 
@@ -20,7 +23,7 @@ public sealed partial class GalcontractSource(HttpClient http, IOptions<MonitorO
 
     public async Task<IReadOnlyList<LotSummary>> ListActiveAsync(CancellationToken ct)
     {
-        var html = await http.GetStringAsync(options.Value.GalcontractListUrl, ct);
+        var html = await Http.GetStringAsync(options.Value.GalcontractListUrl, ct);
         var doc = await new HtmlParser().ParseDocumentAsync(html, ct);
         var result = new List<LotSummary>();
 
@@ -46,7 +49,7 @@ public sealed partial class GalcontractSource(HttpClient http, IOptions<MonitorO
 
     public async Task<Lot> GetLotAsync(LotSummary summary, CancellationToken ct)
     {
-        await using var stream = await http.GetStreamAsync($"{ApiUrl}/procedures/{summary.DetailsId}", ct);
+        await using var stream = await Http.GetStreamAsync($"{ApiUrl}/procedures/{summary.DetailsId}", ct);
         using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
         var p = json.RootElement;
 
@@ -100,6 +103,8 @@ public sealed partial class GalcontractSource(HttpClient http, IOptions<MonitorO
             Address = addressText.Length > 0 ? addressText : null,
             Area = Area(items),
             Category = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("classification", out var cls) ? Text.Clean(Uk(cls, "description")) : null,
+            ClassificationId = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("classification", out var cid) ? Str(cid, "id") : null,
+            PublishedUtc = Text.ParseIso(Str(p, "datePublished")),
             ApplicationsDeadline = Text.KyivTime(Period(p, "tenderPeriod", "endDate")),
             DeadlineUtc = Text.ParseIso(Period(p, "tenderPeriod", "endDate")),
             AuctionDate = Text.KyivTime(Period(p, "auctionPeriod", "startDate")),

@@ -35,6 +35,11 @@ public sealed class RecentLotStore
             """;
         cmd.ExecuteNonQuery();
 
+        // Galcontract lots saved before the real-estate filter have no classifier code, so they can't be checked —
+        // drop them (animals/cars must not be shown on /start). New broadcasts refill the list within hours.
+        cmd.CommandText = "DELETE FROM recent_lots WHERE source = 'galcontract' AND json_extract(lot_json, '$.ClassificationId') IS NULL;";
+        cmd.ExecuteNonQuery();
+
         // One-time migration from the old single-lot table.
         cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'latest_lots';";
         if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)

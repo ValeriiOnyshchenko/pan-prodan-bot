@@ -38,7 +38,7 @@ public static class DryRun
                 if (!filter.Passes(lot) || lot.Price is not { } price) continue;
 
                 shown++;
-                Console.WriteLine($"----- {lot.Key} | region={lot.Region} | price={price} | limit={filter.LimitFor(lot.Region)} | photos={lot.ImageUrls.Count}");
+                Console.WriteLine($"----- {lot.Key} | code={lot.ClassificationId} | published={lot.PublishedUtc:u} | region={lot.Region} | price={price} | limit={filter.LimitFor(lot.Region)} | photos={lot.ImageUrls.Count}");
                 foreach (var img in lot.ImageUrls) Console.WriteLine("  img: " + img);
                 var caption = LotFormatter.Format(lot);
                 Console.WriteLine($"(caption: {LotFormatter.Visible(caption)}/{LotFormatter.CaptionLimit} chars)");

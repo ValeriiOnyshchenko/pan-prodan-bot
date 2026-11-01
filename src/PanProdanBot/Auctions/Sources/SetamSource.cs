@@ -9,9 +9,12 @@ namespace PanProdanBot.Auctions.Sources;
 /// ДП «СЕТАМ», розділ «Нерухомість». The list shows only upcoming auctions (registration open),
 /// 20 per page, with region and price — so most lots are filtered without opening details.
 /// </summary>
-public sealed partial class SetamSource(HttpClient http, IOptions<MonitorOptions> options, ILogger<SetamSource> log)
+public sealed partial class SetamSource(IHttpClientFactory httpFactory, IOptions<MonitorOptions> options, ILogger<SetamSource> log)
     : ILotSource
 {
+    /// <summary>New client per call: the factory recycles connections, so a broken connection can't stick for days.</summary>
+    private HttpClient Http => httpFactory.CreateClient("web");
+
     private const string SiteUrl = "https://setam.net.ua";
     private const int MaxPages = 50;
 
@@ -29,7 +32,7 @@ public sealed partial class SetamSource(HttpClient http, IOptions<MonitorOptions
         {
             if (page > 1) await Task.Delay(options.Value.RequestDelayMs, ct);
 
-            var html = await http.GetStringAsync(page == 1 ? baseUrl : $"{baseUrl}/page/{page}", ct);
+            var html = await Http.GetStringAsync(page == 1 ? baseUrl : $"{baseUrl}/page/{page}", ct);
             var doc = await parser.ParseDocumentAsync(html, ct);
             total ??= int.TryParse(TotalRegex().Match(doc.Body?.TextContent ?? "").Groups[1].Value, out var t) ? t : null;
 
@@ -59,7 +62,7 @@ public sealed partial class SetamSource(HttpClient http, IOptions<MonitorOptions
     public async Task<Lot> GetLotAsync(LotSummary summary, CancellationToken ct)
     {
         var url = $"{SiteUrl}/auction/{summary.DetailsId}";
-        var html = await http.GetStringAsync(url, ct);
+        var html = await Http.GetStringAsync(url, ct);
         var doc = await new HtmlParser().ParseDocumentAsync(html, ct);
 
         // "Label: value" rows in the info box.
@@ -92,6 +95,7 @@ public sealed partial class SetamSource(HttpClient http, IOptions<MonitorOptions
             AuctionType = "Електронні торги СЕТАМ",
             Address = rows.GetValueOrDefault("Місцезнаходження майна"),
             Category = category.Length > 0 ? category : null,
+            PublishedUtc = Text.ParseUaDate(rows.GetValueOrDefault("Дата публікації")),
             ApplicationsDeadline = rows.GetValueOrDefault("Дата закінчення подання заявок"),
             DeadlineUtc = Text.ParseUaDate(rows.GetValueOrDefault("Дата закінчення подання заявок")),
             AuctionDate = rows.GetValueOrDefault("Дата проведення аукціону"),

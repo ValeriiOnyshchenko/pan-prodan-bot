@@ -134,7 +134,14 @@ public sealed class AuctionMonitorService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            log.LogWarning("{Key}: could not load details ({Error}) — will retry next time", summary.Key, ex.Message);
+            log.LogError("{Key}: could not load details ({Error}) — will retry next time", summary.Key, ex.Message);
+            return null;
+        }
+
+        if (_o.MaxLotAgeHours > 0 && lot.PublishedUtc is { } published && clock.GetUtcNow() - published > TimeSpan.FromHours(_o.MaxLotAgeHours))
+        {
+            log.LogInformation("{Key}: published {Published:u} — older than {Hours} h, not sent", lot.Key, published, _o.MaxLotAgeHours);
+            if (markRejected) await seen.MarkAsync(summary.Key, source.Id, "stale", ct);
             return null;
         }
 

@@ -24,6 +24,10 @@ public sealed class Lot
     public string? Address { get; init; }
     public string? Area { get; init; }
     public string? Category { get; init; }
+    /// <summary>Classifier code of the main item (Prozorro CAV/CPV, e.g. "04222000-0"); null if the source has none.</summary>
+    public string? ClassificationId { get; init; }
+    /// <summary>When the lot was published on the site — used to never send old lots.</summary>
+    public DateTimeOffset? PublishedUtc { get; init; }
     public string? ApplicationsDeadline { get; init; }
     /// <summary>Applications deadline as a timestamp — used to skip outdated lots.</summary>
     public DateTimeOffset? DeadlineUtc { get; init; }

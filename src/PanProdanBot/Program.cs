@@ -20,11 +20,10 @@ void Web(HttpClient c)
     c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; PanProdanBot/1.0; +https://t.me/PanProdanBot)");
     c.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9");
 }
-builder.Services.AddHttpClient("web", Web);
-builder.Services.AddHttpClient<GalcontractSource>(Web);
-builder.Services.AddHttpClient<SetamSource>(Web);
-builder.Services.AddTransient<ILotSource>(sp => sp.GetRequiredService<GalcontractSource>());
-builder.Services.AddTransient<ILotSource>(sp => sp.GetRequiredService<SetamSource>());
+builder.Services.AddHttpClient("web", Web)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+builder.Services.AddSingleton<ILotSource, GalcontractSource>();
+builder.Services.AddSingleton<ILotSource, SetamSource>();
 
 if (dryRun)
 {

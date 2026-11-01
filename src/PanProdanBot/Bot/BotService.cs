@@ -31,6 +31,7 @@ public sealed class BotService(
             await broadcaster.BroadcastAsync(BotTexts.Startup, ct);
 
         await AnnounceFilterChangeAsync(ct);
+        await SendAnnouncementsAsync(ct);
 
         await bot.ReceiveAsync(handler, new ReceiverOptions
         {
@@ -59,6 +60,27 @@ public sealed class BotService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             log.LogError(ex, "Could not announce the filter change");
+        }
+    }
+
+    /// <summary>One-time announcements from <see cref="BotTexts.Announcements"/>, each sent once ever.</summary>
+    private async Task SendAnnouncementsAsync(CancellationToken ct)
+    {
+        foreach (var (id, text) in BotTexts.Announcements)
+        {
+            var key = $"announcement:{id}";
+            try
+            {
+                if (await state.GetAsync(key, ct) is not null) continue;
+                await state.SetAsync(key, "sending", ct); // mark first: a crash mid-broadcast must not resend it to everyone
+                var sent = await broadcaster.BroadcastAsync(text, ct);
+                await state.SetAsync(key, $"sent to {sent}", ct);
+                log.LogInformation("Announcement {Id} sent to {Sent} subscribers", id, sent);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogError(ex, "Announcement {Id} failed", id);
+            }
         }
     }
 

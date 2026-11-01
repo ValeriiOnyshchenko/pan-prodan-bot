@@ -37,7 +37,13 @@ public sealed partial class LotFilter(IOptions<MonitorOptions> options)
             .Append(_o.IncludeOtherRegions ? $"other<{_o.DefaultMaxPrice}" : "other:no")
             .Append($"partial:{(_o.SkipPartialLots ? "skip" : "keep")}"));
 
-    public bool Passes(Lot lot) => lot.Price is { } p && Passes(lot.Region, p) && !(_o.SkipPartialLots && IsPartial(lot.Title));
+    public bool Passes(Lot lot) =>
+        lot.Price is { } p && Passes(lot.Region, p) && !(_o.SkipPartialLots && IsPartial(lot.Title)) && IsRealEstate(lot);
+
+    /// <summary>False for animals, cars, shares, enterprises etc. (by classifier code); true when the lot has no code.</summary>
+    public bool IsRealEstate(Lot lot) =>
+        _o.RealEstateCodePrefixes.Count == 0 || lot.ClassificationId is not { Length: > 0 } code
+        || _o.RealEstateCodePrefixes.Any(prefix => code.StartsWith(prefix, StringComparison.Ordinal));
 
     /// <summary>
     /// True when the title says the lot is only a share of an object: «1/2 частка», «1/3 частини», «1/2 ч.»,

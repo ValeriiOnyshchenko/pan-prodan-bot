@@ -25,6 +25,19 @@ The schedule is aligned to the clock, not to the deploy time: with `IntervalMinu
 | **Біржа «Галконтракт»**, мала приватизація | [list](https://sales.tsbgalcontract.org.ua/PositionList.aspx?&page=1&rows=1000&sidx=3&sord=0&filter_type=filter&fvAuctionDir_0=small_privatization&action=Y&status=all), only lots with status *«Прийняття заяв на участь»* | Public Prozorro.Sale API — `procedure.prozorro.sale/api/procedures/{id}` (JSON) |
 | **СЕТАМ**, нерухомість | [setam.net.ua/neruhomist](https://setam.net.ua/neruhomist), all pages of upcoming auctions (*«Реєстрація учасників»*), ~12 pages | Lot page `setam.net.ua/auction/{id}` (HTML) |
 
+### Filter 0 — real estate only
+
+Galcontract's small privatization sells any municipal property — besides buildings also animals (sheep, mouflons, deer), cars, share packages, whole enterprises, building materials. Every lot's main item has a Prozorro classifier code; only these prefixes pass (`RealEstateCodePrefixes`):
+
+| Code | Meaning | Sent |
+|---|---|---|
+| `04…` | Нерухомість (buildings, premises, unfinished construction) | ✅ |
+| `06…` | Земельні ділянки | ✅ |
+| `70…` | Продаж нерухомості (CPV, used for some buildings) | ✅ |
+| `03…` animals, `34…` cars, `08…` shares, `05…` enterprises, `44…` materials, … | — | ❌ |
+
+SETAM lots have no code; the bot only reads SETAM's «Нерухомість» section, so they always pass this filter.
+
 ### Filter 1 — partial lots are skipped
 
 Neither site has a structured "share" field (checked: SETAM lot attributes, Prozorro.Sale `items`), so the **title** is checked with a regex (`LotFilter.IsPartial`, case-insensitive). Skipped when the title contains a fraction followed by:
@@ -45,6 +58,10 @@ Not treated as partial: address fractions («буд. 5/7», «кв. 167/1», «�
 
 Configured in `appsettings.json` → `Monitor` (`RegionRules`, `IncludeOtherRegions`, `DefaultMaxPrice`). Region rules match by substring (`"Київ"`, `"Львів"`, `"Тернопіл"`, `"Франків"`, `"Закарпат"`), so they work with both sites' spellings («Львівська обл.» / «Львівська область», «м.Київ» / «Київ»). The welcome message and bot description are generated from these settings — change the config and texts follow.
 
+### One-time announcements
+
+`BotTexts.Announcements` is a list of `(Id, Text)`. On start, every entry whose id isn't yet in `bot_state` is sent once to all subscribers, then its id is stored — restarts never repeat it. To send a message to everyone: add an entry with a **new** id and push. Sent so far: `2026-11-real-estate-fix` («Пан Продан трохи дав у штангу…»).
+
 ### Filter-change announcement
 
 On every start the bot compares the current filters (regions, limits, partial-lot rule — not display names) with the ones stored in `bot_state`. If they differ, every subscriber gets one «📢 Пан Продан оновив фільтри!» message listing the new rules, and the new signature is stored. Restarts and deploys that don't touch the filters stay silent. To announce a change: edit the filters in `appsettings.json`, push — that's it.
@@ -54,7 +71,10 @@ On every start the bot compares the current filters (regions, limits, partial-lo
 - Every lot ever looked at is stored in SQLite (`seen_lots` table) → each lot is sent **at most once**.
 - **First run** of a source: all currently open lots (~250) are remembered silently so nobody gets flooded; only `FirstRunSampleCount` (1) matching lot per source is sent as a sample.
 - Safety cap: at most `MaxLotsPerRun` (30) lots per check; the rest go out next hour.
-- If a site is down or its layout changes, the check is skipped and logged; nothing is marked as seen, so nothing is lost.
+- If a site is down or its layout changes, the check is skipped and logged.
+- **No history, ever:** only lots published within `MaxLotAgeHours` (24 h) are sent. Older new-to-the-bot lots (e.g. after an outage, a stuck connection or a filter change) are remembered as `stale` and skipped.
+- HTTP clients come fresh from `IHttpClientFactory` on every request with a 5-minute connection lifetime, so a broken connection can't silently block a source for days (that happened on 29.10–01.11 with a long-lived client; restarting the container released ~80 lots at once).
+- Failures to load lot details are logged as errors (`docker logs panprodanbot | grep "could not load"`).
 
 ### Latest lots for new subscribers
 
@@ -76,6 +96,7 @@ Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The ho
 | Key | Default | Meaning |
 |---|---|---|
 | `Enabled` | `true` | Turn monitoring on/off |
+| `MaxLotAgeHours` | `24` | Never send lots published earlier than this (0 = no limit) |
 | `IntervalMinutes` | `60` | Check frequency, aligned to the clock (60 → every hour at xx:00) |
 | `PrefetchMinutes` | `5` | Read the sites this many minutes early, so delivery is exactly at xx:00 |
 | `SkipPartialLots` | `true` | Skip lots that are only a share of an object |
@@ -83,6 +104,7 @@ Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The ho
 | `MaxLotsPerRun` | `30` | Safety cap per check |
 | `FirstRunSampleCount` | `1` | Sample lots sent on the very first check |
 | `RequestDelayMs` | `1000` | Pause between requests to a site |
+| `RealEstateCodePrefixes` | `04`, `06`, `70` | Real-estate-only filter (Galcontract) |
 | `RegionRules` / `IncludeOtherRegions` / `DefaultMaxPrice` | see above | Region/price filter |
 
 `Bot:AnnounceOnStartup` (default `false`) — send "Пан Продан знову на зв'язку" to everyone after each deploy.
