@@ -52,6 +52,14 @@ public static class BotTexts
     public const string Startup =
         "Пан Продан знову на зв'язку! 🔨 Продовжую стежити за аукціонами.";
 
+    /// <summary>Sent once to all subscribers after a deploy that changed the filters.</summary>
+    public static string FiltersChanged(MonitorOptions o) =>
+        "📢 Пан Продан оновив фільтри!\n\n" +
+        "Відтепер я надсилаю лоти за такими правилами (стартова ціна):\n" +
+        Filters(o) + "\n" +
+        PartialLong(o) + "\n" +
+        "Нові правила діють з цього моменту — наступні пропозиції вже будуть за ними.";
+
     // ---- Building blocks ----
 
     private const string Sources =
@@ -60,7 +68,9 @@ public static class BotTexts
 
     private static string Filters(MonitorOptions o) =>
         string.Join("\n", o.RegionRules.Select(r => $"• {r.Name} — до {Text.Money(r.MaxPrice)}")
-            .Append($"• {(o.RegionRules.Count > 0 ? "Інші області" : "Усі області")} — до {Text.Money(o.DefaultMaxPrice)}"));
+            .Append(o.IncludeOtherRegions
+                ? $"• {(o.RegionRules.Count > 0 ? "Інші області" : "Усі області")} — до {Text.Money(o.DefaultMaxPrice)}"
+                : "• Інші області — не надсилаю"));
 
     private static string Partial(MonitorOptions o) =>
         o.SkipPartialLots ? "\n• Без часток об'єктів (1/2 квартири тощо)" : "";

@@ -12,18 +12,30 @@ public sealed partial class LotFilter(IOptions<MonitorOptions> options)
     private readonly MonitorOptions _o = options.Value;
 
     /// <summary>Highest limit of all rules — anything at or above it can be rejected without knowing the region.</summary>
-    public decimal MaxLimit => _o.RegionRules.Select(r => r.MaxPrice).Append(_o.DefaultMaxPrice).Max();
+    public decimal MaxLimit => _o.RegionRules.Select(r => r.MaxPrice)
+        .Concat(_o.IncludeOtherRegions ? [_o.DefaultMaxPrice] : [])
+        .DefaultIfEmpty(0).Max();
 
-    public decimal LimitFor(string? region)
+    /// <summary>Price limit for the region; null = region is not included at all.</summary>
+    public decimal? LimitFor(string? region)
     {
         if (!string.IsNullOrWhiteSpace(region))
             foreach (var rule in _o.RegionRules)
                 if (rule.Match.Any(m => region.Contains(m, StringComparison.OrdinalIgnoreCase)))
                     return rule.MaxPrice;
-        return _o.DefaultMaxPrice;
+        return _o.IncludeOtherRegions ? _o.DefaultMaxPrice : null;
     }
 
-    public bool Passes(string? region, decimal price) => price < LimitFor(region);
+    public bool Passes(string? region, decimal price) => LimitFor(region) is { } limit && price < limit;
+
+    /// <summary>
+    /// Everything that changes which lots pass. Stored after each start; when it differs on the next start,
+    /// subscribers are told the filters changed. Display names are deliberately not part of it.
+    /// </summary>
+    public string Signature() => string.Join(";",
+        _o.RegionRules.Select(r => $"{string.Join("|", r.Match.Select(m => m.ToLowerInvariant()).Order())}<{r.MaxPrice}").Order()
+            .Append(_o.IncludeOtherRegions ? $"other<{_o.DefaultMaxPrice}" : "other:no")
+            .Append($"partial:{(_o.SkipPartialLots ? "skip" : "keep")}"));
 
     public bool Passes(Lot lot) => lot.Price is { } p && Passes(lot.Region, p) && !(_o.SkipPartialLots && IsPartial(lot.Title));
 

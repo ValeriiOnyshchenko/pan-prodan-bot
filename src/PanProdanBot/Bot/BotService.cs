@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using PanProdanBot.Auctions;
+using PanProdanBot.Storage;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
@@ -13,6 +14,8 @@ public sealed class BotService(
     Broadcaster broadcaster,
     IOptions<BotOptions> options,
     IOptions<MonitorOptions> monitor,
+    LotFilter filter,
+    StateStore state,
     ILogger<BotService> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -27,10 +30,36 @@ public sealed class BotService(
         if (options.Value.AnnounceOnStartup)
             await broadcaster.BroadcastAsync(BotTexts.Startup, ct);
 
+        await AnnounceFilterChangeAsync(ct);
+
         await bot.ReceiveAsync(handler, new ReceiverOptions
         {
             AllowedUpdates = [UpdateType.Message, UpdateType.MyChatMember],
         }, ct);
+    }
+
+    /// <summary>
+    /// After a deploy that changed the filters, tell every subscriber once.
+    /// The current filter signature is stored, so restarts and unrelated deploys stay silent.
+    /// </summary>
+    private async Task AnnounceFilterChangeAsync(CancellationToken ct)
+    {
+        const string key = "filters_signature";
+        try
+        {
+            var current = filter.Signature();
+            var previous = await state.GetAsync(key, ct);
+            if (previous == current) return;
+
+            // previous == null: first version with this feature — the filters did change in this release, so announce too.
+            log.LogInformation("Filters changed ({Previous} → {Current}), notifying subscribers", previous ?? "unknown", current);
+            await broadcaster.BroadcastAsync(BotTexts.FiltersChanged(monitor.Value), ct);
+            await state.SetAsync(key, current, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogError(ex, "Could not announce the filter change");
+        }
     }
 
     /// <summary>Pushes name/descriptions from <see cref="BotTexts"/> to Telegram, only when they changed (these calls are rate-limited).</summary>

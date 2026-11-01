@@ -38,11 +38,16 @@ Not treated as partial: address fractions («буд. 5/7», «кв. 167/1», «�
 
 | Region | Passes if price is below |
 |---|---|
+| м. Київ і Київська область | 2 000 000 |
 | Львівська область | 2 000 000 |
-| Київська область **and м. Київ** | 2 000 000 |
-| All other regions | 1 000 000 |
+| Тернопільська, Івано-Франківська, Закарпатська області | 1 000 000 |
+| All other regions | **not sent** (`IncludeOtherRegions = false`) |
 
-Configured in `appsettings.json` → `Monitor` (`DefaultMaxPrice`, `RegionRules`). Region rules match by substring (`"Львів"`, `"Київ"`), so they work with both sites' spellings. The welcome message and bot description are generated from these settings — change the config and texts follow.
+Configured in `appsettings.json` → `Monitor` (`RegionRules`, `IncludeOtherRegions`, `DefaultMaxPrice`). Region rules match by substring (`"Київ"`, `"Львів"`, `"Тернопіл"`, `"Франків"`, `"Закарпат"`), so they work with both sites' spellings («Львівська обл.» / «Львівська область», «м.Київ» / «Київ»). The welcome message and bot description are generated from these settings — change the config and texts follow.
+
+### Filter-change announcement
+
+On every start the bot compares the current filters (regions, limits, partial-lot rule — not display names) with the ones stored in `bot_state`. If they differ, every subscriber gets one «📢 Пан Продан оновив фільтри!» message listing the new rules, and the new signature is stored. Restarts and deploys that don't touch the filters stay silent. To announce a change: edit the filters in `appsettings.json`, push — that's it.
 
 ### New-lot detection
 
@@ -78,7 +83,7 @@ Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The ho
 | `MaxLotsPerRun` | `30` | Safety cap per check |
 | `FirstRunSampleCount` | `1` | Sample lots sent on the very first check |
 | `RequestDelayMs` | `1000` | Pause between requests to a site |
-| `DefaultMaxPrice` / `RegionRules` | see above | Filters |
+| `RegionRules` / `IncludeOtherRegions` / `DefaultMaxPrice` | see above | Region/price filter |
 
 `Bot:AnnounceOnStartup` (default `false`) — send "Пан Продан знову на зв'язку" to everyone after each deploy.
 
@@ -90,7 +95,7 @@ Every lot sent to a user is recorded in `deliveries` (chat id + lot key). The ho
 | `src/PanProdanBot/Auctions/` | Monitor service, filter, message formatter, models |
 | `src/PanProdanBot/Auctions/Sources/` | `GalcontractSource`, `SetamSource` — one class per site |
 | `src/PanProdanBot/Bot/` | Polling service, update handler, broadcaster |
-| `src/PanProdanBot/Storage/` | SQLite: subscribers + delivery log, seen lots, recent lots per source |
+| `src/PanProdanBot/Storage/` | SQLite: subscribers + delivery log, seen lots, recent lots per source, bot state |
 | `src/PanProdanBot/DryRun.cs` | `--dry-run` preview mode |
 | `assets/avatar.png` / `.svg` | Bot avatar (upload via BotFather) |
 | `deploy/` | VM setup script and the remote deploy script used by CI |

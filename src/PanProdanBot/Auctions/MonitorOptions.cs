@@ -38,7 +38,10 @@ public sealed class MonitorOptions
 
     public string SetamListUrl { get; set; } = "https://setam.net.ua/neruhomist";
 
-    /// <summary>Price limit (UAH, exclusive) for regions without a specific rule.</summary>
+    /// <summary>false = lots from regions without a rule are not sent at all.</summary>
+    public bool IncludeOtherRegions { get; set; } = true;
+
+    /// <summary>Price limit (UAH, exclusive) for regions without a specific rule (if <see cref="IncludeOtherRegions"/>).</summary>
     public decimal DefaultMaxPrice { get; set; } = 1_000_000;
 
     /// <summary>Region-specific limits. Defined in appsettings.json (lists must not have C# defaults — the binder appends).</summary>

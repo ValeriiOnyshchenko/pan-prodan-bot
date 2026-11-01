@@ -46,6 +46,7 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 builder.Services.AddSingleton<SubscriberStore>();
 builder.Services.AddSingleton<SeenLotStore>();
 builder.Services.AddSingleton<RecentLotStore>();
+builder.Services.AddSingleton<StateStore>();
 builder.Services.AddSingleton<Broadcaster>();
 builder.Services.AddSingleton<UpdateHandler>();
 builder.Services.AddHostedService<BotService>();
